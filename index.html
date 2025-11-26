@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoStream - Live Flight Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a1628;
+      color: #fff;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .container {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #0a1628;
+    }
+    .leaflet-container { background: #0a1628; }
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      padding: 20px;
+      z-index: 1000;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 4px;
+      background: linear-gradient(90deg, #3b82f6, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: #888; font-size: 0.8rem; margin-bottom: 16px; }
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 999px;
+      font-size: 0.7rem;
+      color: #3b82f6;
+      margin-left: 12px;
+      vertical-align: middle;
+    }
+    .live-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+    .panel {
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      max-width: 360px;
+      margin-bottom: 16px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-size: 0.75rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .refresh-btn {
+      padding: 4px 10px;
+      font-size: 0.7rem;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #3b82f6;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .refresh-btn:hover { background: rgba(59, 130, 246, 0.3); }
+    .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .flight-list {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .flight-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      margin-bottom: 6px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-left: 3px solid transparent;
+    }
+    .flight-item:hover {
+      background: rgba(255,255,255,0.06);
+      border-left-color: #3b82f6;
+    }
+    .flight-item.selected {
+      background: rgba(59, 130, 246, 0.15);
+      border-left-color: #3b82f6;
+    }
+    .flight-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      background: rgba(59, 130, 246, 0.2);
+    }
+    .flight-info { flex: 1; min-width: 0; }
+    .flight-callsign {
+      color: #fff;
+      font-weight: 600;
+      font-family: monospace;
+      margin-bottom: 2px;
+    }
+    .flight-details {
+      color: #666;
+      font-size: 0.65rem;
+      display: flex;
+      gap: 8px;
+    }
+    .flight-country { color: #888; font-size: 0.65rem; text-align: right; }
+
+    /* Flight Detail Panel */
+    .detail-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(10px);
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      z-index: 1000;
+      display: none;
+    }
+    .detail-panel.visible { display: block; }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .detail-callsign {
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-family: monospace;
+      color: #3b82f6;
+    }
+    .detail-country {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 4px;
+    }
+    .close-btn {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: #888;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .detail-item {
+      background: rgba(255,255,255,0.03);
+      padding: 12px;
+      border-radius: 8px;
+    }
+    .detail-label {
+      font-size: 0.65rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .detail-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .detail-value.highlight { color: #3b82f6; }
+    .detail-value.green { color: #22c55e; }
+    .detail-value.orange { color: #f59e0b; }
+    .detail-unit {
+      font-size: 0.7rem;
+      color: #888;
+      margin-left: 4px;
+    }
+    .detail-coords {
+      grid-column: 1 / -1;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+
+    .stats {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      gap: 12px;
+      z-index: 1000;
+      flex-wrap: wrap;
+    }
+    .stat {
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #3b82f6;
+    }
+    .stat-value.green { color: #22c55e; }
+    .stat-value.orange { color: #f59e0b; }
+    .stat-label {
+      font-size: 0.6rem;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      z-index: 1000;
+    }
+    .legend-title {
+      font-size: 0.75rem;
+      color: #888;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.7rem;
+      margin-bottom: 6px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .region-select {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      gap: 4px;
+      background: rgba(0,0,0,0.8);
+      padding: 6px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .region-btn {
+      padding: 8px 16px;
+      font-size: 0.75rem;
+      background: transparent;
+      border: none;
+      color: #888;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .region-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    .region-btn.active {
+      background: rgba(59, 130, 246, 0.3);
+      color: #fff;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 22, 40, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .loading-overlay.hidden { display: none; }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: #888; font-size: 0.875rem; }
+
+    .api-note {
+      position: absolute;
+      bottom: 80px;
+      right: 20px;
+      font-size: 0.6rem;
+      color: #555;
+      z-index: 1000;
+    }
+
+    /* Custom aircraft marker */
+    .aircraft-marker {
+      font-size: 16px;
+      text-shadow: 0 0 4px rgba(0,0,0,0.8);
+    }
+    .leaflet-popup-content-wrapper {
+      background: rgba(0,0,0,0.9);
+      color: #fff;
+      border-radius: 8px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .leaflet-popup-content {
+      margin: 12px;
+      font-size: 0.8rem;
+    }
+    .leaflet-popup-tip {
+      background: rgba(0,0,0,0.9);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="map"></div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading live flight data from OpenSky Network...</div>
+    </div>
+
+    <div class="overlay">
+      <h1>GeoStream <span class="live-badge">LIVE</span></h1>
+      <p class="subtitle">Real-time aircraft tracking • ADS-B data</p>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Active Aircraft</span>
+          <button class="refresh-btn" id="refreshBtn" onclick="fetchFlights()">Refresh</button>
+        </div>
+        <div class="flight-list" id="flightList">
+          <div style="color: #666; font-size: 0.75rem; padding: 20px; text-align: center;">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="region-select">
+      <button class="region-btn active" onclick="setRegion('us')" id="btn-us">USA</button>
+      <button class="region-btn" onclick="setRegion('eu')" id="btn-eu">Europe</button>
+      <button class="region-btn" onclick="setRegion('asia')" id="btn-asia">Asia</button>
+      <button class="region-btn" onclick="setRegion('world')" id="btn-world">World</button>
+    </div>
+
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-header">
+        <div>
+          <div class="detail-callsign" id="detailCallsign">--</div>
+          <div class="detail-country" id="detailCountry">--</div>
+        </div>
+        <button class="close-btn" onclick="closeDetail()">×</button>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">Altitude</div>
+          <div class="detail-value highlight" id="detailAltitude">--<span class="detail-unit">ft</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Ground Speed</div>
+          <div class="detail-value orange" id="detailSpeed">--<span class="detail-unit">kts</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Heading</div>
+          <div class="detail-value" id="detailHeading">--<span class="detail-unit">°</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Vertical Speed</div>
+          <div class="detail-value green" id="detailVertical">--<span class="detail-unit">ft/min</span></div>
+        </div>
+        <div class="detail-item detail-coords">
+          <div class="detail-label">Position</div>
+          <div class="detail-value" id="detailCoords">--</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">ICAO24</div>
+          <div class="detail-value" id="detailIcao" style="font-family: monospace; font-size: 0.9rem;">--</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Squawk</div>
+          <div class="detail-value" id="detailSquawk" style="font-family: monospace; font-size: 0.9rem;">--</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="totalFlights">--</div>
+        <div class="stat-label">Aircraft</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value green" id="avgAltitude">--</div>
+        <div class="stat-label">Avg Alt (ft)</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value orange" id="avgSpeed">--</div>
+        <div class="stat-label">Avg Speed</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="countries">--</div>
+        <div class="stat-label">Countries</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-title">Altitude</div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #22c55e;"></div>
+        <span>&lt; 10,000 ft</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #3b82f6;"></div>
+        <span>10k - 25k ft</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #8b5cf6;"></div>
+        <span>25k - 35k ft</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #ec4899;"></div>
+        <span>&gt; 35,000 ft</span>
+      </div>
+    </div>
+
+    <div class="api-note">Data: OpenSky Network</div>
+  </div>
+
+  <script>
+    // Region configurations
+    const regions = {
+      us: { center: [39, -98], zoom: 4, bounds: [24, -125, 50, -66] },
+      eu: { center: [50, 10], zoom: 4, bounds: [35, -10, 60, 30] },
+      asia: { center: [35, 105], zoom: 4, bounds: [10, 70, 50, 145] },
+      world: { center: [20, 0], zoom: 2, bounds: [-60, -180, 80, 180] }
+    };
+    let currentRegion = 'us';
+    let flights = [];
+    let markers = [];
+    let selectedFlight = null;
+
+    // Initialize map with dark theme
+    const map = L.map('map', {
+      center: regions.us.center,
+      zoom: regions.us.zoom,
+      zoomControl: false
+    });
+
+    // Dark map tiles (CartoDB Dark Matter)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '©OpenStreetMap, ©CartoDB',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Add zoom control to bottom right
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    function getAltitudeColor(altitude) {
+      const altFt = altitude * 3.28084;
+      if (altFt >= 35000) return '#ec4899';
+      if (altFt >= 25000) return '#8b5cf6';
+      if (altFt >= 10000) return '#3b82f6';
+      return '#22c55e';
+    }
+
+    function setRegion(region) {
+      currentRegion = region;
+      document.querySelectorAll('.region-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('btn-' + region).classList.add('active');
+
+      const r = regions[region];
+      map.setView(r.center, r.zoom);
+      fetchFlights();
+    }
+
+    async function fetchFlights() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      btn.textContent = 'Loading...';
+
+      try {
+        const region = regions[currentRegion];
+        const [lamin, lomin, lamax, lomax] = region.bounds;
+
+        let url = 'https://opensky-network.org/api/states/all';
+        if (currentRegion !== 'world') {
+          url += `?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch flight data');
+
+        const data = await response.json();
+
+        flights = (data.states || [])
+          .filter(s => s[5] !== null && s[6] !== null && !s[8])
+          .slice(0, 300)
+          .map(s => ({
+            icao24: s[0],
+            callsign: (s[1] || '').trim() || 'N/A',
+            country: s[2] || 'Unknown',
+            lng: s[5],
+            lat: s[6],
+            altitude: s[7] || s[13] || 0,
+            velocity: s[9] || 0,
+            heading: s[10] || 0,
+            verticalRate: s[11] || 0,
+            squawk: s[14] || '----'
+          }));
+
+        updateMarkers();
+        updateFlightList();
+        updateStats();
+
+        document.getElementById('loadingOverlay').classList.add('hidden');
+
+      } catch (error) {
+        console.error('Error fetching flight data:', error);
+        document.getElementById('flightList').innerHTML =
+          `<div style="color: #ef4444; font-size: 0.75rem; padding: 20px; text-align: center;">
+            Error loading data. OpenSky may be rate-limited.<br>Try again in a moment.
+          </div>`;
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+
+    function updateMarkers() {
+      // Clear existing markers
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      flights.forEach(flight => {
+        const color = getAltitudeColor(flight.altitude);
+        const rotation = flight.heading || 0;
+
+        // Create custom icon with rotation
+        const icon = L.divIcon({
+          className: 'aircraft-marker',
+          html: `<div style="transform: rotate(${rotation}deg); color: ${color}; filter: drop-shadow(0 0 2px ${color});">✈</div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+
+        const marker = L.marker([flight.lat, flight.lng], { icon })
+          .addTo(map);
+
+        marker.on('click', () => showDetail(flight));
+        marker.flightData = flight;
+        markers.push(marker);
+      });
+    }
+
+    function updateFlightList() {
+      const list = document.getElementById('flightList');
+      list.innerHTML = '';
+
+      const sorted = [...flights].sort((a, b) => b.altitude - a.altitude);
+
+      sorted.slice(0, 25).forEach(flight => {
+        const altFt = Math.round(flight.altitude * 3.28084);
+        const speedKts = Math.round(flight.velocity * 1.94384);
+        const color = getAltitudeColor(flight.altitude);
+
+        const item = document.createElement('div');
+        item.className = 'flight-item' + (selectedFlight === flight.icao24 ? ' selected' : '');
+        item.dataset.icao = flight.icao24;
+        item.innerHTML = `
+          <div class="flight-icon" style="color: ${color};">✈</div>
+          <div class="flight-info">
+            <div class="flight-callsign">${flight.callsign}</div>
+            <div class="flight-details">
+              <span>${altFt.toLocaleString()} ft</span>
+              <span>${speedKts} kts</span>
+              <span>${flight.heading.toFixed(0)}°</span>
+            </div>
+          </div>
+          <div class="flight-country">${flight.country}</div>
+        `;
+        item.onclick = () => {
+          const f = flights.find(fl => fl.icao24 === flight.icao24);
+          if (f) showDetail(f);
+        };
+        list.appendChild(item);
+      });
+    }
+
+    function showDetail(flight) {
+      selectedFlight = flight.icao24;
+
+      // Update list selection
+      document.querySelectorAll('.flight-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset.icao === flight.icao24);
+      });
+
+      // Pan to aircraft
+      map.panTo([flight.lat, flight.lng]);
+
+      // Update detail panel
+      const altFt = Math.round(flight.altitude * 3.28084);
+      const speedKts = Math.round(flight.velocity * 1.94384);
+      const vRate = Math.round(flight.verticalRate * 196.85);
+
+      document.getElementById('detailCallsign').textContent = flight.callsign;
+      document.getElementById('detailCountry').textContent = flight.country;
+      document.getElementById('detailAltitude').innerHTML = `${altFt.toLocaleString()}<span class="detail-unit">ft</span>`;
+      document.getElementById('detailSpeed').innerHTML = `${speedKts}<span class="detail-unit">kts</span>`;
+      document.getElementById('detailHeading').innerHTML = `${flight.heading.toFixed(0)}<span class="detail-unit">°</span>`;
+      document.getElementById('detailVertical').innerHTML = `${vRate > 0 ? '+' : ''}${vRate}<span class="detail-unit">ft/min</span>`;
+      document.getElementById('detailCoords').textContent = `${flight.lat.toFixed(4)}°, ${flight.lng.toFixed(4)}°`;
+      document.getElementById('detailIcao').textContent = flight.icao24.toUpperCase();
+      document.getElementById('detailSquawk').textContent = flight.squawk;
+
+      document.getElementById('detailPanel').classList.add('visible');
+    }
+
+    function closeDetail() {
+      selectedFlight = null;
+      document.getElementById('detailPanel').classList.remove('visible');
+      document.querySelectorAll('.flight-item').forEach(el => el.classList.remove('selected'));
+    }
+
+    function updateStats() {
+      document.getElementById('totalFlights').textContent = flights.length;
+
+      if (flights.length > 0) {
+        const avgAlt = flights.reduce((sum, f) => sum + f.altitude, 0) / flights.length;
+        const avgVel = flights.reduce((sum, f) => sum + f.velocity, 0) / flights.length;
+        const countries = new Set(flights.map(f => f.country)).size;
+
+        document.getElementById('avgAltitude').textContent = Math.round(avgAlt * 3.28084).toLocaleString();
+        document.getElementById('avgSpeed').textContent = Math.round(avgVel * 1.94384);
+        document.getElementById('countries').textContent = countries;
+      }
+    }
+
+    // Auto-refresh every 30 seconds
+    setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchFlights();
+      }
+    }, 30 * 1000);
+
+    // Initial fetch
+    fetchFlights();
+  </script>
+</body>
+</html>
