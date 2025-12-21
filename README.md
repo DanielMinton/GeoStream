@@ -15,13 +15,17 @@ GeoStream is a real-time aircraft tracker powered by the OpenSky Network API. It
 - **Region Filtering**: Focus on USA, Europe, Asia, or World
 - **Flight List**: Sortable list of active aircraft
 
-## Technical Stack
+## Tech Stack
 
+### Languages
+- **HTML** (1 file) - Single-file static application with embedded JavaScript/CSS
+- **JavaScript** - Client-side flight tracking logic
+- **CSS** - Styling and theming
+
+### Libraries & APIs
 - **Leaflet.js** - Interactive mapping library
 - **CartoDB Dark Matter** - Dark-themed map tiles
 - **OpenSky Network API** - Real-time ADS-B flight data
-- **JavaScript** - Client-side application
-- **HTML/CSS** - Single-file static deployment
 
 ## Data Displayed
 
